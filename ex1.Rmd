@@ -1,0 +1,124 @@
+---
+title: "ex1"
+output: html_document
+date: "2023-02-26"
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+library(tsibble)
+library(fpp3)
+library(readxl)
+library(lubridate)
+
+```
+
+# read data
+```{r}
+danmarksplass <- readr::read_csv(
+  "https://raw.githubusercontent.com/holleland/BAN430/master/data/traffic_danmarksplass.csv")%>%
+  mutate(vehicles = as.numeric(vehicles))%>%
+  as_tsibble(index = datetime)
+# NA
+
+danmarksplass%>%
+  autoplot()
+```
+
+# training data
+```{r}
+train = danmarksplass%>%
+  filter(year(.$datetime) < 2023)
+
+train%>%
+  ggplot(aes(x=datetime,y=vehicles))+
+  geom_line()+
+  facet_wrap(~year(datetime),scales = "free_x")
+
+```
+
+# plot
+```{r}
+train%>%gg_season(vehicles,period = "day")
+
+train%>%gg_season(vehicles,period = "week")
+
+train%>%gg_season(vehicles,period = "year")
+```
+
+```{r}
+train %>%
+  index_by(yearmonth = ~yearmonth(.))%>%
+  summarize(traffic = mean(vehicles,na.rm = T))%>%
+  gg_subseries(traffic,period = "year")
+```
+
+```{r}
+train%>%
+  mutate(wday = wday(datetime,label=T,abbr = F,week_start = 1),
+hour = hour(datetime),
+date = date(datetime))%>%
+  ggplot(aes(x = hour, y = vehicles, col=date,group=date))+
+  geom_line()+
+  facet_wrap(~wday)+
+  scale_color_date(low="blue",high = "magenta")
+```
+
+
+
+# trend
+```{r}
+
+train %>%
+  index_by(date = ~yearweek(.))%>%
+  summarise(vehicles = sum(vehicles,na.rm = T))%>%
+  model(
+    stl91 = STL(vehicles~trend(window=91)),
+    stl29 = STL(vehicles~trend(window=29)),
+    stl191 = STL(vehicles~ trend(window=191)))%>%
+  components()%>%
+  autoplot()
+
+```
+
+# TSLM
+```{r}
+test = danmarksplass%>%
+  filter(yearweek(datetime) == yearweek("2023 W1"))
+
+fit = train%>%
+  model(
+    M0 = TSLM(vehicles~season(period = "week")),
+    M1 = TSLM(log(vehicles)~ season(period = "week"))
+  )
+
+fit %>% 
+  select(M1)%>%
+  report()
+```
+
+```{r}
+fit%>%
+  forecast(new_data = test)%>%
+  autoplot(test,level=95)
+```
+
+```{r}
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
